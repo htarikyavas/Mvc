@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
 using Microsoft.AspNet.FileProviders;
 using Microsoft.Framework.Cache.Memory;
 using Microsoft.Framework.OptionsModel;
@@ -23,38 +21,26 @@ namespace Microsoft.AspNet.Mvc.Razor
         /// Initializes a new instance of <see cref="CompilerCache"/> populated with precompiled views
         /// discovered using <paramref name="provider"/>.
         /// </summary>
-        /// <param name="provider">
-        /// An <see cref="IAssemblyProvider"/> representing the assemblies
-        /// used to search for pre-compiled views.
-        /// </param>
+        /// <param name="viewsProvider"><see cref="IPrecompiledViewsProvider"/> that provides precompiled
+        /// views.</param>
         /// <param name="optionsAccessor">An accessor to the <see cref="RazorViewEngineOptions"/>.</param>
-        public CompilerCache(IAssemblyProvider provider,
+        public CompilerCache(IPrecompiledViewsProvider viewsProvider,
                              IOptions<RazorViewEngineOptions> optionsAccessor)
-            : this(GetFileInfos(provider.CandidateAssemblies), optionsAccessor.Options.FileProvider)
         {
-        }
-
-        // Internal for unit testing
-        internal CompilerCache(IEnumerable<RazorFileInfoCollection> razorFileInfoCollection,
-                               IFileProvider fileProvider)
-        {
-            _fileProvider = fileProvider;
+            _fileProvider = optionsAccessor.Options.FileProvider;
             _cache = new MemoryCache(new MemoryCacheOptions { ListenForMemoryPressure = false });
+
             var cacheEntries = new List<CompilerCacheEntry>();
-            foreach (var viewCollection in razorFileInfoCollection)
+            foreach (var view in viewsProvider.PrecompiledViews)
             {
-                var containingAssembly = viewCollection.GetType().GetTypeInfo().Assembly;
-                foreach (var fileInfo in viewCollection.FileInfos)
-                {
-                    var viewType = containingAssembly.GetType(fileInfo.FullTypeName);
-                    var cacheEntry = new CompilerCacheEntry(fileInfo, viewType);
+                var cacheEntry = new CompilerCacheEntry(view.RazorFileInfo, view.CompiledType);
 
-                    // There shouldn't be any duplicates and if there are any the first will win.
-                    // If the result doesn't match the one on disk its going to recompile anyways.
-                    _cache.Set(NormalizePath(fileInfo.RelativePath), cacheEntry, PopulateCacheSetContext);
+                // There shouldn't be any duplicates and if there are any the first will win.
+                // If the result doesn't match the one on disk its going to recompile anyways.
+                var normalizedPath = NormalizePath(view.RazorFileInfo.RelativePath);
+                _cache.Set(normalizedPath, cacheEntry, PopulateCacheSetContext);
 
-                    cacheEntries.Add(cacheEntry);
-                }
+                cacheEntries.Add(cacheEntry);
             }
 
             // Set up ViewStarts
@@ -239,30 +225,6 @@ namespace Microsoft.AspNet.Mvc.Razor
 
             return path;
         }
-
-        internal static IEnumerable<RazorFileInfoCollection>
-                    GetFileInfos(IEnumerable<Assembly> assemblies)
-        {
-            return assemblies.SelectMany(a => a.ExportedTypes)
-                    .Where(Match)
-                    .Select(c => (RazorFileInfoCollection)Activator.CreateInstance(c));
-        }
-
-        private static bool Match(Type t)
-        {
-            var inAssemblyType = typeof(RazorFileInfoCollection);
-            if (inAssemblyType.IsAssignableFrom(t))
-            {
-                var hasParameterlessConstructor = t.GetConstructor(Type.EmptyTypes) != null;
-
-                return hasParameterlessConstructor
-                    && !t.GetTypeInfo().IsAbstract
-                    && !t.GetTypeInfo().ContainsGenericParameters;
-            }
-
-            return false;
-        }
-
 
         private class GetOrAddResult
         {

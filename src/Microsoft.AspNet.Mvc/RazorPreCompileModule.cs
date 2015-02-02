@@ -12,7 +12,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Framework.Cache.Memory;
 using Microsoft.Framework.DependencyInjection;
 using Microsoft.Framework.DependencyInjection.Fallback;
-using Microsoft.Framework.DependencyInjection.ServiceLookup;
 using Microsoft.Framework.Runtime;
 
 namespace Microsoft.AspNet.Mvc
@@ -45,8 +44,8 @@ namespace Microsoft.AspNet.Mvc
             sc.AddMvc();
 
             var serviceProvider = BuildFallbackServiceProvider(sc, _appServices);
-            var viewCompiler = new RazorPreCompiler(serviceProvider, _memoryCache, compilationSettings);
-            viewCompiler.CompileViews(context);
+            var viewCompiler = new RazorPreCompiler(serviceProvider, context, _memoryCache, compilationSettings);
+            viewCompiler.CompileViews();
         }
 
         public void AfterCompile(IAfterCompileContext context)

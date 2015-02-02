@@ -8,6 +8,7 @@ using System.Net;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNet.Builder;
+using Microsoft.AspNet.Mvc.Razor;
 using Microsoft.AspNet.TestHost;
 using Microsoft.Framework.DependencyInjection;
 using Microsoft.Framework.Runtime;
@@ -38,7 +39,7 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
 
             // We will render a view that writes the fully qualified name of the Assembly containing the type of
             // the view. If the view is precompiled, this assembly will be PrecompilationWebsite.
-            var assemblyName = typeof(Startup).GetTypeInfo().Assembly.GetName().ToString();
+            var assemblyNamePrefix = GetAssemblyNamePrefix();
 
             try
             {
@@ -49,9 +50,9 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
                 // Assert - 1
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 var parsedResponse1 = new ParsedResponse(responseContent);
-                Assert.Equal(assemblyName, parsedResponse1.ViewStart);
-                Assert.Equal(assemblyName, parsedResponse1.Layout);
-                Assert.Equal(assemblyName, parsedResponse1.Index);
+                Assert.StartsWith(assemblyNamePrefix, parsedResponse1.ViewStart);
+                Assert.StartsWith(assemblyNamePrefix, parsedResponse1.Layout);
+                Assert.StartsWith(assemblyNamePrefix, parsedResponse1.Index);
 
                 // Act - 2
                 // Touch the Layout file and verify it is now dynamically compiled.
@@ -60,9 +61,9 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
 
                 // Assert - 2
                 var response2 = new ParsedResponse(responseContent);
-                Assert.NotEqual(assemblyName, response2.Layout);
-                Assert.Equal(assemblyName, response2.ViewStart);
-                Assert.Equal(assemblyName, response2.Index);
+                Assert.DoesNotContain(assemblyNamePrefix, response2.Layout);
+                Assert.StartsWith(assemblyNamePrefix, response2.ViewStart);
+                Assert.StartsWith(assemblyNamePrefix, response2.Index);
 
                 // Act - 3
                 // Touch the _ViewStart file and verify it causes all files to recompile.
@@ -71,8 +72,8 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
 
                 // Assert - 3
                 var response3 = new ParsedResponse(responseContent);
-                Assert.NotEqual(assemblyName, response3.ViewStart);
-                Assert.NotEqual(assemblyName, response3.Index);
+                Assert.NotEqual(assemblyNamePrefix, response3.ViewStart);
+                Assert.NotEqual(assemblyNamePrefix, response3.Index);
                 Assert.NotEqual(response2.Layout, response3.Layout);
 
                 // Act - 4
@@ -147,13 +148,13 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
         public async Task PrecompiledView_UsesCompilationOptionsFromApplication()
         {
             // Arrange
-            var assemblyName = typeof(Startup).GetTypeInfo().Assembly.GetName().ToString();
+            var assemblyNamePrefix = GetAssemblyNamePrefix();
 #if ASPNET50
             var expected =
-@"Value set inside ASPNET50 " + assemblyName;
+@"Value set inside ASPNET50 " + assemblyNamePrefix;
 #elif ASPNETCORE50
             var expected =
-@"Value set inside ASPNETCORE50 " + assemblyName;
+@"Value set inside ASPNETCORE50 " + assemblyNamePrefix;
 #endif
 
             var server = TestServer.Create(_services, _app);
@@ -164,14 +165,14 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
             var responseContent = await response.Content.ReadAsStringAsync();
 
             // Assert
-            Assert.Equal(expected, responseContent.Trim());
+            Assert.StartsWith(expected, responseContent.Trim());
         }
 
         [Fact]
         public async Task DeletingPrecompiledViewStart_PriorToFirstRequestToAView_CausesViewToBeRecompiled()
         {
             // Arrange
-            var expected = typeof(Startup).GetTypeInfo().Assembly.GetName().ToString();
+            var expected = GetAssemblyNamePrefix();
             var server = TestServer.Create(_services, _app);
             var client = server.CreateClient();
 
@@ -191,15 +192,59 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
             try
             {
                 // Act - 2
+                File.Delete(viewStartPath);
                 var response2 = await client.GetStringAsync("http://localhost/Home/ViewStartDeletedPriorToFirstRequest");
 
                 // Assert - 2
-                Assert.NotEqual(expected, response2.Trim());
+                Assert.DoesNotContain(expected, response2.Trim());
             }
             finally
             {
                 File.WriteAllText(viewStartPath, viewStartContent);
             }
+        }
+
+        [Fact]
+        public async Task TagHelpersFromTheApplication_CanBeAdded()
+        {
+            // Arrange
+            var assemblyNamePrefix = GetAssemblyNamePrefix();
+            var expected = @"<root data-root=""true""><input class=""form-control"" type=""number"" data-val=""true""" +
+                @" data-val-range=""The field Age must be between 10 and 100."" data-val-range-max=""100"" "+
+                @"data-val-range-min=""10"" id=""Age"" name=""Age"" value="""" /><a href="""">Back to List</a></root>";
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+
+            // Act
+            var response = await client.GetStringAsync("http://localhost/TagHelpers/Add");
+
+            // Assert
+            var responseLines = response.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+            Assert.StartsWith(assemblyNamePrefix, responseLines[0]);
+            Assert.Equal(expected, responseLines[1]);
+        }
+
+        [Fact]
+        public async Task TagHelpersFromTheApplication_CanBeRemoved()
+        {
+            // Arrange
+            var assemblyNamePrefix = GetAssemblyNamePrefix();
+            var expected = @"<root>root-content</root>";
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+
+            // Act
+            var response = await client.GetStringAsync("http://localhost/TagHelpers/Remove");
+
+            // Assert
+            var responseLines = response.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+            Assert.StartsWith(assemblyNamePrefix, responseLines[0]);
+            Assert.Equal(expected, responseLines[1]);
+        }
+
+        private static string GetAssemblyNamePrefix()
+        {
+            return typeof(Startup).GetTypeInfo().Assembly.GetName().Name + "." + nameof(RazorPreCompiler) + ".";
         }
 
         private static Task TouchFile(string viewsDir, string file)

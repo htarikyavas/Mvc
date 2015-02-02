@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.AspNet.FileProviders;
+using Microsoft.Framework.OptionsModel;
 using Moq;
 using Xunit;
 
@@ -22,7 +23,7 @@ namespace Microsoft.AspNet.Mvc.Razor
         {
             // Arrange
             var fileProvider = new TestFileProvider();
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var type = GetType();
 
             // Act
@@ -39,7 +40,7 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var fileProvider = new TestFileProvider();
             fileProvider.AddFile(ViewPath, "some content");
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var type = GetType();
             var expected = UncachedCompilationResult.Successful(type, "hello world");
 
@@ -61,7 +62,7 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var fileProvider = new TestFileProvider();
             fileProvider.AddFile(ViewPath, "some content");
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var type = typeof(RuntimeCompileIdentical);
             var expected = UncachedCompilationResult.Successful(type, "hello world");
 
@@ -89,7 +90,7 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var fileProvider = new TestFileProvider();
             fileProvider.AddFile(ViewPath, "some content");
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var type = typeof(RuntimeCompileIdentical);
             var expected1 = UncachedCompilationResult.Successful(type, "hello world");
             var expected2 = UncachedCompilationResult.Successful(type, "different content");
@@ -117,7 +118,7 @@ namespace Microsoft.AspNet.Mvc.Razor
             var mockFileProvider = new Mock<TestFileProvider> { CallBase = true };
             var fileProvider = mockFileProvider.Object;
             fileProvider.AddFile(ViewPath, "some content");
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var type = typeof(RuntimeCompileIdentical);
             var expected = UncachedCompilationResult.Successful(type, "hello world");
 
@@ -169,34 +170,6 @@ namespace Microsoft.AspNet.Mvc.Razor
             }
         }
 
-        private class ViewCollection : RazorFileInfoCollection
-        {
-            private readonly List<RazorFileInfo> _fileInfos = new List<RazorFileInfo>();
-
-            public ViewCollection()
-            {
-                FileInfos = _fileInfos;
-
-                var content = new PreCompile().Content;
-                var length = Encoding.UTF8.GetByteCount(content);
-
-                Add(new RazorFileInfo()
-                {
-                    FullTypeName = typeof(PreCompile).FullName,
-                    Hash = Crc32.Calculate(GetMemoryStream(content)).ToString(CultureInfo.InvariantCulture),
-                    HashAlgorithmVersion = 1,
-                    LastModified = DateTime.FromFileTimeUtc(10000),
-                    Length = length,
-                    RelativePath = ViewPath,
-                });
-            }
-
-            public void Add(RazorFileInfo fileInfo)
-            {
-                _fileInfos.Add(fileInfo);
-            }
-        }
-
         private static Stream GetMemoryStream(string content)
         {
             var bytes = Encoding.UTF8.GetBytes(content);
@@ -212,10 +185,9 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var instance = new RuntimeCompileIdentical();
             var length = Encoding.UTF8.GetByteCount(instance.Content);
-            var collection = new ViewCollection();
             var fileProvider = new TestFileProvider();
-            var cache = new CompilerCache(new[] { new ViewCollection() }, fileProvider);
-
+            var viewsProvider = GetViewsProvider(GetDefaultViewInfo());
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
             var fileInfo = new TestFileInfo
             {
                 Length = length,
@@ -223,7 +195,6 @@ namespace Microsoft.AspNet.Mvc.Razor
                 Content = instance.Content
             };
             fileProvider.AddFile(ViewPath, fileInfo);
-            var precompiledContent = new PreCompile().Content;
 
             // Act
             var result = cache.GetOrAdd(ViewPath,
@@ -247,9 +218,9 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var instance = (View)Activator.CreateInstance(resultViewType);
             var length = Encoding.UTF8.GetByteCount(instance.Content);
-            var collection = new ViewCollection();
             var fileProvider = new TestFileProvider();
-            var cache = new CompilerCache(new[] { new ViewCollection() }, fileProvider);
+            var viewsProvider = GetViewsProvider(GetDefaultViewInfo());
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             var fileInfo = new TestFileInfo
             {
@@ -304,10 +275,9 @@ namespace Microsoft.AspNet.Mvc.Razor
                 RelativePath = "_ViewStart.cshtml",
                 FullTypeName = typeof(RuntimeCompileIdentical).FullName
             };
-
-            var precompiledViews = new ViewCollection();
-            precompiledViews.Add(viewStartRazorFileInfo);
-            var cache = new CompilerCache(new[] { precompiledViews }, fileProvider);
+            var viewStartViewInfo = new PrecompiledViewInfo(viewStartRazorFileInfo, typeof(RuntimeCompileIdentical));
+            var viewsProvider = GetViewsProvider(GetDefaultViewInfo(), viewStartViewInfo);
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             // Act
             var result = cache.GetOrAdd(ViewPath,
@@ -324,10 +294,9 @@ namespace Microsoft.AspNet.Mvc.Razor
         public void GetOrAdd_ReturnsFileNotFoundResult_IfPrecompiledViewWasRemovedFromFileSystem()
         {
             // Arrange
-            var precompiledViews = new ViewCollection();
             var fileProvider = new TestFileProvider();
-            var precompiledView = precompiledViews.FileInfos[0];
-            var cache = new CompilerCache(new[] { precompiledViews }, fileProvider);
+            var viewsProvider = GetViewsProvider(GetDefaultViewInfo());
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             // Act
             var result = cache.GetOrAdd(ViewPath,
@@ -342,17 +311,17 @@ namespace Microsoft.AspNet.Mvc.Razor
         public void GetOrAdd_DoesNotReadFileFromFileSystemAfterPrecompiledViewIsVerified()
         {
             // Arrange
-            var precompiledViews = new ViewCollection();
             var mockFileProvider = new Mock<TestFileProvider> { CallBase = true };
             var fileProvider = mockFileProvider.Object;
-            var precompiledView = precompiledViews.FileInfos[0];
+            var viewInfo = GetDefaultViewInfo();
             var fileInfo = new TestFileInfo
             {
-                Length = precompiledView.Length,
-                LastModified = precompiledView.LastModified,
+                Length = viewInfo.RazorFileInfo.Length,
+                LastModified = viewInfo.RazorFileInfo.LastModified,
             };
             fileProvider.AddFile(ViewPath, fileInfo);
-            var cache = new CompilerCache(new[] { precompiledViews }, fileProvider);
+            var viewsProvider = GetViewsProvider(viewInfo);
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             // Act 1
             var result1 = cache.GetOrAdd(ViewPath,
@@ -382,19 +351,18 @@ namespace Microsoft.AspNet.Mvc.Razor
         {
             // Arrange
             var expectedType = typeof(RuntimeCompileDifferent);
-            var lastModified = DateTime.UtcNow;
             var fileProvider = new TestFileProvider();
-            var collection = new ViewCollection();
-            var precompiledFile = collection.FileInfos[0];
-            precompiledFile.RelativePath = "Views\\home\\index.cshtml";
-            var cache = new CompilerCache(new[] { collection }, fileProvider);
+            var precompiledView = GetDefaultViewInfo();
+            precompiledView.RazorFileInfo.RelativePath = "Views\\home\\index.cshtml";
+            var viewsProvider = GetViewsProvider(precompiledView);
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
             var testFile = new TestFileInfo
             {
                 Content = new PreCompile().Content,
-                LastModified = precompiledFile.LastModified,
-                PhysicalPath = precompiledFile.RelativePath
+                LastModified = precompiledView.RazorFileInfo.LastModified,
+                PhysicalPath = precompiledView.RazorFileInfo.RelativePath
             };
-            fileProvider.AddFile(precompiledFile.RelativePath, testFile);
+            fileProvider.AddFile(precompiledView.RazorFileInfo.RelativePath, testFile);
             var relativeFile = new RelativeFileInfo(testFile, testFile.PhysicalPath);
 
             // Act 1
@@ -428,14 +396,13 @@ namespace Microsoft.AspNet.Mvc.Razor
             var lastModified = DateTime.UtcNow;
             var fileProvider = new TestFileProvider();
 
-            var viewCollection = new ViewCollection();
-            var precompiledView = viewCollection.FileInfos[0];
-            precompiledView.RelativePath = "Views\\Index.cshtml";
+            var precompiledView = GetDefaultViewInfo();
+            precompiledView.RazorFileInfo.RelativePath = "Views\\Index.cshtml";
             var viewFileInfo = new TestFileInfo
             {
                 Content = new PreCompile().Content,
-                LastModified = precompiledView.LastModified,
-                PhysicalPath = precompiledView.RelativePath
+                LastModified = precompiledView.RazorFileInfo.LastModified,
+                PhysicalPath = precompiledView.RazorFileInfo.RelativePath
             };
             fileProvider.AddFile(viewFileInfo.PhysicalPath, viewFileInfo);
 
@@ -456,8 +423,9 @@ namespace Microsoft.AspNet.Mvc.Razor
             };
             fileProvider.AddFile(viewStartFileInfo.PhysicalPath, viewStartFileInfo);
 
-            viewCollection.Add(viewStart);
-            var cache = new CompilerCache(new[] { viewCollection }, fileProvider);
+            var viewStartInfo = new PrecompiledViewInfo(viewStart, typeof(RuntimeCompileIdentical));
+            var viewsProvider = GetViewsProvider(precompiledView, viewStartInfo);
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             // Act 1
             var result1 = cache.GetOrAdd(viewFileInfo.PhysicalPath,
@@ -542,8 +510,8 @@ namespace Microsoft.AspNet.Mvc.Razor
             var fileProvider = new TestFileProvider();
             fileProvider.AddFile(fileInfo.PhysicalPath, fileInfo);
             fileProvider.AddFile(viewStartRazorFileInfo.RelativePath, viewStartFileInfo);
-            var viewCollection = new ViewCollection();
-            var cache = new CompilerCache(new[] { viewCollection }, fileProvider);
+            var viewsProvider = GetViewsProvider(GetDefaultViewInfo());
+            var cache = new CompilerCache(viewsProvider, GetOptionsAccessor(fileProvider));
 
             // Act
             var result = cache.GetOrAdd(fileInfo.PhysicalPath,
@@ -562,7 +530,7 @@ namespace Microsoft.AspNet.Mvc.Razor
             // Arrange
             var lastModified = DateTime.UtcNow;
             var fileProvider = new TestFileProvider();
-            var cache = new CompilerCache(Enumerable.Empty<RazorFileInfoCollection>(), fileProvider);
+            var cache = new CompilerCache(GetViewsProvider(), GetOptionsAccessor(fileProvider));
             var fileInfo = new TestFileInfo
             {
                 PhysicalPath = "test",
@@ -592,6 +560,47 @@ namespace Microsoft.AspNet.Mvc.Razor
             result = Assert.IsType<CompilationResult>(actual2);
             Assert.Null(actual2.CompiledContent);
             Assert.Same(type, actual2.CompiledType);
+        }
+
+        private static IOptions<RazorViewEngineOptions> GetOptionsAccessor(IFileProvider provider)
+        {
+            var options = new RazorViewEngineOptions
+            {
+                FileProvider = provider
+            };
+
+            var optionsAccessor = new Mock<IOptions<RazorViewEngineOptions>>();
+            optionsAccessor.SetupGet(a => a.Options)
+                           .Returns(options);
+
+            return optionsAccessor.Object;
+        }
+
+        private static IPrecompiledViewsProvider GetViewsProvider(params PrecompiledViewInfo[] precompiledViews)
+        {
+            var provider = new Mock<IPrecompiledViewsProvider>();
+            provider.SetupGet(p => p.PrecompiledViews)
+                    .Returns(precompiledViews ?? Enumerable.Empty<PrecompiledViewInfo>());
+
+            return provider.Object;
+        }
+
+        private static PrecompiledViewInfo GetDefaultViewInfo()
+        {
+            var content = new PreCompile().Content;
+            var length = Encoding.UTF8.GetByteCount(content);
+
+            var fileInfo = new RazorFileInfo
+            {
+                FullTypeName = typeof(PreCompile).FullName,
+                Hash = Crc32.Calculate(GetMemoryStream(content)).ToString(CultureInfo.InvariantCulture),
+                HashAlgorithmVersion = 1,
+                LastModified = DateTime.FromFileTimeUtc(10000),
+                Length = length,
+                RelativePath = ViewPath,
+            };
+
+            return new PrecompiledViewInfo(fileInfo, typeof(PreCompile));
         }
     }
 }
