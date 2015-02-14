@@ -194,6 +194,11 @@ namespace Microsoft.AspNet.Mvc.Xml
 
         private DataContractSerializer GetCachedSerializer(Type type)
         {
+            if (type == null)
+            {
+                return null;
+            }
+
             object serializer;
             if (!_serializerCache.TryGetValue(type, out serializer))
             {
