@@ -95,7 +95,7 @@ namespace Microsoft.AspNet.Mvc.Xml
         /// <inheritdoc />
         protected override bool CanReadType([NotNull] Type type)
         {
-            return GetCachedSerializer(type) != null;
+            return GetCachedSerializer(GetSerializableType(type)) != null;
         }
 
         /// <summary>

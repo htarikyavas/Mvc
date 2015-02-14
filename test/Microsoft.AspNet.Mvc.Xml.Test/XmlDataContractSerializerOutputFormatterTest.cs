@@ -112,6 +112,22 @@ namespace Microsoft.AspNet.Mvc.Xml
         }
 
         [Fact]
+        public async Task XmlDataContractSerializer_CachesSerializerForType()
+        {
+            // Arrange
+            var input = new DummyClass { SampleInt = 10 };
+            var formatter = new TestXmlDataContractSerializerOutputFormatter();
+            var context = GetOutputFormatterContext(input, typeof(DummyClass));
+
+            // Act
+            formatter.CanWriteResult(context, MediaTypeHeaderValue.Parse("application/xml"));
+            await formatter.WriteAsync(context);
+
+            // Assert
+            Assert.Equal(1, formatter.calledCount);
+        }
+
+        [Fact]
         public void DefaultConstructor_ExpectedWriterSettings_Created()
         {
             // Arrange and Act
@@ -551,6 +567,17 @@ namespace Microsoft.AspNet.Mvc.Xml
             httpContext.SetupGet(c => c.Request).Returns(request.Object);
             httpContext.SetupGet(c => c.Response).Returns(response.Object);
             return new ActionContext(httpContext.Object, routeData: null, actionDescriptor: null);
+        }
+
+        private class TestXmlDataContractSerializerOutputFormatter : XmlDataContractSerializerOutputFormatter
+        {
+            public int calledCount = 0;
+
+            protected override DataContractSerializer CreateSerializer(Type type)
+            {
+                calledCount++;
+                return base.CreateSerializer(type);
+            }
         }
     }
 }
