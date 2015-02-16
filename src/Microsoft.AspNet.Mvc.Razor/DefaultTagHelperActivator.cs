@@ -48,6 +48,10 @@ namespace Microsoft.AspNet.Mvc.Razor
             {
                 valueAccessor = viewContext => viewContext;
             }
+            else if(property.PropertyType == typeof(ViewDataDictionary))
+            {
+                valueAccessor = viewContext => viewContext.ViewData;
+            }
             else
             {
                 valueAccessor = (viewContext) =>
