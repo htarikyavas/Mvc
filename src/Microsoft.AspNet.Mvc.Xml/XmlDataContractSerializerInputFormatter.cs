@@ -20,7 +20,8 @@ namespace Microsoft.AspNet.Mvc.Xml
     {
         private DataContractSerializerSettings _serializerSettings;
         private readonly XmlDictionaryReaderQuotas _readerQuotas = FormattingUtilities.GetDefaultXmlReaderQuotas();
-
+        private readonly DataAnnotationRequiredAttributeValidation _dataAnnotationRequiredAttributeValidation;
+        
         /// <summary>
         /// Initializes a new instance of DataContractSerializerInputFormatter
         /// </summary>
@@ -36,6 +37,8 @@ namespace Microsoft.AspNet.Mvc.Xml
 
             WrapperProviderFactories = new List<IWrapperProviderFactory>();
             WrapperProviderFactories.Add(new SerializableErrorWrapperProviderFactory());
+
+            _dataAnnotationRequiredAttributeValidation = new DataAnnotationRequiredAttributeValidation();
         }
 
         /// <summary>
@@ -91,7 +94,9 @@ namespace Microsoft.AspNet.Mvc.Xml
 
             using (var xmlReader = CreateXmlReader(new NonDisposableStream(request.Body)))
             {
-                DataAnnotationRequiredAttributeValidation.Validate(context.ModelType, context.ActionContext.ModelState);
+                _dataAnnotationRequiredAttributeValidation.Validate(
+                    context.ModelType, 
+                    context.ActionContext.ModelState);
 
                 var type = GetSerializableType(context.ModelType);
 
