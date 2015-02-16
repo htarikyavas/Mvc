@@ -22,6 +22,8 @@ namespace Microsoft.AspNet.Mvc
             SupportedMediaTypes.Add(MediaTypeHeaderValue.Parse("text/json"));
 
             _serializerSettings = new JsonSerializerSettings();
+
+            _serializerSettings.ContractResolver = new JsonContractResolver();
         }
 
         /// <summary>
