@@ -117,6 +117,10 @@ namespace Microsoft.AspNet.Mvc.Xml
         protected override bool CanWriteType(Type declaredType, Type runtimeType)
         {
             var type = ResolveType(declaredType, runtimeType);
+            if (type == null)
+            {
+                return false;
+            }
 
             return GetCachedSerializer(GetSerializableType(type)) != null;
         }
@@ -194,11 +198,6 @@ namespace Microsoft.AspNet.Mvc.Xml
 
         private DataContractSerializer GetCachedSerializer(Type type)
         {
-            if (type == null)
-            {
-                return null;
-            }
-
             object serializer;
             if (!_serializerCache.TryGetValue(type, out serializer))
             {

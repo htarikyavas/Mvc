@@ -79,7 +79,7 @@ namespace Microsoft.AspNet.Mvc.Xml
         }
 
         [Fact]
-        public async Task XmlDataContractSerializer_CachesSerializerForType()
+        public void XmlDataContractSerializer_CachesSerializerForType()
         {
             // Arrange
             var input = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
@@ -90,10 +90,10 @@ namespace Microsoft.AspNet.Mvc.Xml
 
             // Act
             formatter.CanRead(context);
-            await formatter.ReadAsync(context);
+            formatter.CanRead(context);
 
             // Assert
-            Assert.Equal(1, formatter.calledCount);
+            Assert.Equal(1, formatter.createSerializerCalledCount);
         }
 
         [Fact]
@@ -505,11 +505,11 @@ namespace Microsoft.AspNet.Mvc.Xml
 
         private class TestXmlDataContractSerializerInputFormatter : XmlDataContractSerializerInputFormatter
         {
-            public int calledCount = 0;
+            public int createSerializerCalledCount = 0;
 
             protected override DataContractSerializer CreateSerializer(Type type)
             {
-                calledCount++;
+                createSerializerCalledCount++;
                 return base.CreateSerializer(type);
             }
         }

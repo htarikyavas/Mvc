@@ -112,7 +112,7 @@ namespace Microsoft.AspNet.Mvc.Xml
         }
 
         [Fact]
-        public async Task XmlDataContractSerializer_CachesSerializerForType()
+        public void XmlDataContractSerializer_CachesSerializerForType()
         {
             // Arrange
             var input = new DummyClass { SampleInt = 10 };
@@ -121,10 +121,10 @@ namespace Microsoft.AspNet.Mvc.Xml
 
             // Act
             formatter.CanWriteResult(context, MediaTypeHeaderValue.Parse("application/xml"));
-            await formatter.WriteAsync(context);
+            formatter.CanWriteResult(context, MediaTypeHeaderValue.Parse("application/xml"));
 
             // Assert
-            Assert.Equal(1, formatter.calledCount);
+            Assert.Equal(1, formatter.createSerializerCalledCount);
         }
 
         [Fact]
@@ -571,11 +571,11 @@ namespace Microsoft.AspNet.Mvc.Xml
 
         private class TestXmlDataContractSerializerOutputFormatter : XmlDataContractSerializerOutputFormatter
         {
-            public int calledCount = 0;
+            public int createSerializerCalledCount = 0;
 
             protected override DataContractSerializer CreateSerializer(Type type)
             {
-                calledCount++;
+                createSerializerCalledCount++;
                 return base.CreateSerializer(type);
             }
         }
