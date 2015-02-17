@@ -15,6 +15,7 @@ using Microsoft.AspNet.Http;
 using Microsoft.AspNet.Http.Core.Collections;
 using Microsoft.AspNet.TestHost;
 using ModelBindingWebSite;
+using ModelBindingWebSite.Models;
 using ModelBindingWebSite.ViewModels;
 using Newtonsoft.Json;
 using Xunit;
@@ -1691,6 +1692,216 @@ namespace Microsoft.AspNet.Mvc.FunctionalTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var fileContent = await response.Content.ReadAsStringAsync();
             Assert.Equal(expectedContent, fileContent);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithCollection()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new Dictionary<string, string>
+            {
+                { "AddressLines[0].Line", "Street Address 0" },
+                { "AddressLines[1].Line", "Street Address 1" },
+                { "ZipCode", "98052" },
+            };
+            var url = "http://localhost/BindModel/CollectionType";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PutAsync(url, formData);
+
+            // Assert
+            var address = JsonConvert.DeserializeObject<Address2>(
+                                await response.Content.ReadAsStringAsync());
+            Assert.Equal(2, address.AddressLines.Count);
+            Assert.Equal("Street Address 0", address.AddressLines[0].Line);
+            Assert.Equal("Street Address 1", address.AddressLines[1].Line);
+            Assert.Equal("98052", address.ZipCode);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithCollection_SpecifyingIndex()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new[]
+            {
+                new KeyValuePair<string, string>("AddressLines.index", "3"),
+                new KeyValuePair<string, string>("AddressLines.index", "10000"),
+                new KeyValuePair<string, string>("AddressLines[3].Line", "Street Address 0"),
+                new KeyValuePair<string, string>("AddressLines[10000].Line", "Street Address 1"),
+            };
+            var url = "http://localhost/BindModel/CollectionType";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PutAsync(url, formData);
+
+            // Assert
+            var address = JsonConvert.DeserializeObject<Address2>(
+                                await response.Content.ReadAsStringAsync());
+            Assert.Equal(2, address.AddressLines.Count);
+            Assert.Equal("Street Address 0", address.AddressLines[0].Line);
+            Assert.Equal("Street Address 1", address.AddressLines[1].Line);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithNestedCollection()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new Dictionary<string, string>
+            {
+                { "Addresses[0].AddressLines[0].Line", "Street Address 00" },
+                { "Addresses[0].AddressLines[1].Line", "Street Address 01" },
+                { "Addresses[0].ZipCode", "98052" },
+                { "Addresses[1].AddressLines[0].Line", "Street Address 10" },
+                { "Addresses[1].AddressLines[3].Line", "Street Address 13" },
+            };
+            var url = "http://localhost/BindModel/NestedCollectionType";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PostAsync(url, formData);
+
+            // Assert
+            var result = JsonConvert.DeserializeObject<UserWithAddress>(
+                                await response.Content.ReadAsStringAsync());
+            Assert.Equal(2, result.Addresses.Count);
+            var address = result.Addresses[0];
+            Assert.Equal(2, address.AddressLines.Count);
+            Assert.Equal("Street Address 00", address.AddressLines[0].Line);
+            Assert.Equal("Street Address 01", address.AddressLines[1].Line);
+            Assert.Equal("98052", address.ZipCode);
+
+            address = result.Addresses[1];
+            Assert.Single(address.AddressLines);
+            Assert.Equal("Street Address 10", address.AddressLines[0].Line);
+            Assert.Null(address.ZipCode);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithIncorrectlyFormattedNestedCollectionValue()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new Dictionary<string, string>
+            {
+                { "Addresses", "Street Address 00" },
+            };
+            var url = "http://localhost/BindModel/NestedCollectionType";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PostAsync(url, formData);
+
+            // Assert
+            var result = JsonConvert.DeserializeObject<UserWithAddress>(
+                                await response.Content.ReadAsStringAsync());
+            var address = Assert.Single(result.Addresses);
+            Assert.Null(address.AddressLines);
+            Assert.Null(address.ZipCode);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithNestedCollectionContainingRecursiveRelation()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new Dictionary<string, string>
+            {
+                { "People[0].Name", "Person 0" },
+                { "People[0].Parent.Name", "Person 0 Parent" },
+                { "People[1].Parent.Name", "Person 1 Parent" },
+                { "People[2].Parent", "Person 2 Parent" },
+                { "People[1000].Name", "Person 1000 Parent" },
+            };
+            var url = "http://localhost/BindModel/NestedCollectionOfRecursiveTypes";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PostAsync(url, formData);
+
+            // Assert
+            var result = JsonConvert.DeserializeObject<PeopleModel>(
+                                await response.Content.ReadAsStringAsync());
+            Assert.Equal(3, result.People.Count);
+            var person = result.People[0];
+
+            Assert.Equal("Person 0", person.Name);
+            Assert.Equal("Person 0 Parent", person.Parent.Name);
+            Assert.Null(person.Parent.Parent);
+
+            person = result.People[1];
+            Assert.Equal("Person 1 Parent", person.Parent.Name);
+            Assert.Null(person.Parent.Parent);
+
+            person = result.People[2];
+            Assert.Null(person.Name);
+            Assert.Null(person.Parent);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_WithNestedCollectionContainingRecursiveRelation_WithMalformedValue()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content = new Dictionary<string, string>
+            {
+                { "People", "Person 0" },
+            };
+            var url = "http://localhost/BindModel/NestedCollectionOfRecursiveTypes";
+            var formData = new FormUrlEncodedContent(content);
+
+            // Act
+            var response = await client.PostAsync(url, formData);
+
+            // Assert
+            var result = JsonConvert.DeserializeObject<PeopleModel>(
+                                await response.Content.ReadAsStringAsync());
+            var person = Assert.Single(result.People);
+            Assert.Null(person.Name);
+            Assert.Null(person.Parent);
+        }
+
+        [Fact]
+        public async Task BindModelAsync_MultipleCheckBoxesWithSameKey_BindsFirstValue()
+        {
+            // Arrange
+            var server = TestServer.Create(_services, _app);
+            var client = server.CreateClient();
+            var content1 = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string,string>("isValid", "true"),
+                new KeyValuePair<string,string>("isValid", "false"),
+            };
+            var content2 = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string,string>("isValid", "false"),
+                new KeyValuePair<string,string>("isValid", "true"),
+            };
+            var url = "http://localhost/BindModel/PostCheckBox";
+            var formData1 = new FormUrlEncodedContent(content1);
+            var formData2 = new FormUrlEncodedContent(content2);
+
+            // Act
+            var response1 = await client.PostAsync(url, formData1);
+            var response2 = await client.PostAsync(url, formData2);
+
+            // Assert
+            var result1 = JsonConvert.DeserializeObject<bool>(
+                                await response1.Content.ReadAsStringAsync());
+            Assert.True(result1);
+            var result2 = JsonConvert.DeserializeObject<bool>(
+                                await response2.Content.ReadAsStringAsync());
+            Assert.False(result2);
         }
     }
 }
