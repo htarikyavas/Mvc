@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using Newtonsoft.Json;
@@ -10,8 +9,7 @@ using Newtonsoft.Json.Serialization;
 namespace Microsoft.AspNet.Mvc
 {
     /// <summary>
-    /// The default <see cref="IContractResolver"/> for <see cref="JsonInputFormatter"/> and 
-    /// <see cref="JsonOutputFormatter"/>. 
+    /// The default <see cref="IContractResolver"/> for <see cref="JsonInputFormatter"/>.
     /// It determines if a value type member has <see cref="RequiredAttribute"/> and sets the appropriate 
     /// JsonProperty settings.
     /// </summary>
